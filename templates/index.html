@@ -1,56 +1,120 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Mini Web AI Chatbot</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 2em; }
-        #chat { max-width: 600px; margin: auto; }
-        .message { margin-bottom: 1em; }
-        .user { color: blue; }
-        .bot { color: green; }
-    </style>
+  <meta charset="UTF-8">
+  <title>✨ My AI Chatbot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+    };
+  </script>
 </head>
-<body>
-    <div id="chat">
-        <h2>💬 Chat with AI</h2>
-        <div id="messages"></div>
+<body class="bg-gray-100 dark:bg-gray-900 min-h-screen flex flex-col items-center p-6">
 
-        <form id="chatForm">
-            <input type="text" id="userInput" placeholder="Type your message..." required />
-            <button type="submit">Send</button>
-        </form>
+  <div class="w-full max-w-2xl bg-white dark:bg-gray-800 dark:text-white rounded-xl shadow-md p-6">
+    <div class="flex justify-between mb-4">
+      <button id="darkModeToggle" class="text-sm text-blue-600 hover:text-blue-800">🌙 Toggle Dark Mode</button>
+      <button id="downloadChat" class="text-sm text-green-600 hover:text-green-800">📥 Download Chat</button>
     </div>
 
-    <script>
-        const form = document.getElementById('chatForm');
-        const messagesDiv = document.getElementById('messages');
+    <div id="messages" class="space-y-4 overflow-y-auto max-h-[500px] p-2"></div>
 
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const userText = document.getElementById('userInput').value;
+    <form id="chatForm" class="mt-6 flex">
+      <input id="userInput" name="user_input" type="text" required
+        class="flex-1 rounded-l-lg p-3 border dark:bg-gray-700 dark:border-gray-600"
+        placeholder="Type your message..." />
+      <button type="submit"
+        class="bg-blue-500 dark:bg-blue-600 text-white rounded-r-lg px-5 hover:bg-blue-600">Send</button>
+    </form>
+  </div>
 
-            // Show user message
-            const userMsg = document.createElement('div');
-            userMsg.className = "message user";
-            userMsg.textContent = "You: " + userText;
-            messagesDiv.appendChild(userMsg);
+  <script>
+    const form = document.getElementById('chatForm');
+    const messagesDiv = document.getElementById('messages');
 
-            // Send to backend
-            const response = await fetch('/ask', {
-                method: 'POST',
-                body: new URLSearchParams({ user_input: userText })
-            });
-            const data = await response.json();
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const userText = document.getElementById('userInput').value;
 
-            // Show AI response
-            const botMsg = document.createElement('div');
-            botMsg.className = "message bot";
-            botMsg.textContent = "AI: " + data.answer;
-            messagesDiv.appendChild(botMsg);
+        // Show user message
+        const userMsg = document.createElement('div');
+        userMsg.className = "flex justify-end";
+        userMsg.innerHTML = `
+            <div class="flex items-center gap-2">
+                <div class="text-sm font-bold">🧑 You</div>
+                <div class="bg-blue-500 dark:bg-blue-600 text-white p-3 rounded-lg max-w-sm">
+                    ${userText}
+                </div>
+            </div>`;
+        messagesDiv.appendChild(userMsg);
 
-            document.getElementById('userInput').value = "";
+        // Create AI reply bubble
+        const botMsg = document.createElement('div');
+        botMsg.className = "flex justify-start";
+        const botBubble = document.createElement('div');
+        botBubble.className = "flex items-center gap-2";
+        botBubble.innerHTML = `
+            <div class="text-sm font-bold">🤖 AI</div>
+            <div class="bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white p-3 rounded-lg max-w-sm">
+                <span id='botText'> </span>
+            </div>`;
+        botMsg.appendChild(botBubble);
+        messagesDiv.appendChild(botMsg);
+
+        // Scroll to bottom
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+        // Fetch stream
+        const response = await fetch('/ask', {
+            method: 'POST',
+            body: new URLSearchParams({ user_input: userText })
         });
-    </script>
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        const botTextSpan = botBubble.querySelector('#botText');
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value);
+            botTextSpan.innerText += chunk;
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        document.getElementById('userInput').value = "";
+    });
+
+    // Dark Mode Toggle
+    const darkToggle = document.getElementById('darkModeToggle');
+    darkToggle.addEventListener('click', () => {
+        document.body.classList.toggle('dark');
+    });
+
+    // Download Chat History
+    const downloadButton = document.getElementById('downloadChat');
+    downloadButton.addEventListener('click', () => {
+        let chatText = "";
+        const bubbles = document.querySelectorAll('#messages div');
+
+        bubbles.forEach(bubble => {
+            const who = bubble.querySelector('div.text-sm')?.innerText || "";
+            const message = bubble.querySelector('div.max-w-sm')?.innerText || "";
+            if (who && message) {
+                chatText += `${who}:\n${message}\n\n`;
+            }
+        });
+
+        const blob = new Blob([chatText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = "chat_history.txt";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+  </script>
 </body>
 </html>

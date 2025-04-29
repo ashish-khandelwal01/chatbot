@@ -1,52 +1,51 @@
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse
-from fastapi.responses import JSONResponse
-from fastapi.templating import Jinja2Templates
-import requests
 import os
+from fastapi import FastAPI, Request, Form
+from fastapi.responses import HTMLResponse, StreamingResponse
+import requests
+import json
+from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
+
+load_dotenv()
+
+GROQ_API_KEY = os.environ["GROQ_API_KEY"]
+
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 chat_history = []
 
-load_dotenv()
-
-def ask_groq(history):
+# Streaming AI Response
+def groq_stream(history):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {os.environ['GROQ_API_KEY']}",
+        "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json",
     }
     payload = {
         "model": "llama3-70b-8192",
         "messages": history,
-        "temperature": 0.7
+        "temperature": 0.7,
+        "stream": True,
     }
-    print(headers)
-    response = requests.post(url, headers=headers, json=payload)
-    result = response.json()
 
-    if 'choices' in result:
-        return result['choices'][0]['message']['content']
-    else:
-        return f"Error: {result}"
-
+    with requests.post(url, headers=headers, json=payload, stream=True) as response:
+        for line in response.iter_lines():
+            if line and line.startswith(b'data: '):
+                data = line[len(b'data: '):]
+                if data == b'[DONE]':
+                    break
+                chunk = json.loads(data)
+                delta = chunk['choices'][0]['delta'].get('content')
+                if delta:
+                    yield delta
 
 @app.get("/", response_class=HTMLResponse)
 async def get_home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
-
-@app.post("/ask", response_class=JSONResponse)
+@app.post("/ask", response_class=StreamingResponse)
 async def post_question(request: Request, user_input: str = Form(...)):
-    # Add user message to chat history
     chat_history.append({"role": "user", "content": user_input})
-
-    # Get AI response based on the full chat history
-    ai_reply = ask_groq(chat_history)
-
-    # Add AI reply to chat history
-    chat_history.append({"role": "assistant", "content": ai_reply})
-
-    return {"answer": ai_reply}
+    stream = groq_stream(chat_history)
+    return StreamingResponse(stream, media_type="text/plain")
